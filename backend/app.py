@@ -23,7 +23,8 @@ import xlrd
 load_dotenv(Path(__file__).with_name('.env'))
 DB = Path(os.getenv('FOLIO_DB', str(Path(__file__).with_name('folio.db'))))
 app = FastAPI(title='Folio API')
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
+cors_origins = ['http://localhost:5173', 'http://127.0.0.1:5173'] + [origin.strip().rstrip('/') for origin in os.getenv('FOLIO_CORS_ORIGINS', '').split(',') if origin.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=['*'], allow_headers=['*'])
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS dataset(id INTEGER PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, imported_at TEXT NOT NULL, mapping TEXT NOT NULL, status TEXT NOT NULL, imported_count INTEGER DEFAULT 0, skipped_count INTEGER DEFAULT 0, duplicate_count INTEGER DEFAULT 0);

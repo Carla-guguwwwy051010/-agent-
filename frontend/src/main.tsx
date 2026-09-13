@@ -11,8 +11,8 @@ type Evidence={id:string;raw_text:string;row_number:number;source_file:string;da
 type Detail={cluster:Issue;count:number;share:number;denominator:number;evidence:Evidence[]}
 type ChatMessage={role:'user'|'agent';text:string;mode?:string}
 const labels:Record<string,string>={text:'反馈内容',date:'日期',version:'版本',platform:'平台',source:'来源',rating:'评分'}
-const API='/api'
-async function request<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(API+url,options);const data=await r.json().catch(()=>({detail:'服务器返回了无效响应'}));if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败');return data as T}
+const API=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')+'/api'
+async function request<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(API+url,options);if(!(r.headers.get('content-type')||'').includes('application/json'))throw new Error('分析服务未连接');const data=await r.json().catch(()=>({detail:'服务器返回了无效响应'}));if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败');return data as T}
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
 
 function App(){
@@ -20,10 +20,11 @@ function App(){
  const [preview,setPreview]=useState<Preview|null>(null),[mapping,setMapping]=useState<Record<string,string|null>>({}),[paste,setPaste]=useState(''),[pasteOpen,setPasteOpen]=useState(false)
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[drawer,setDrawer]=useState<{type:'cluster'|'metric'|'evidence';id?:number;metric?:string;feedback?:Evidence}|null>(null),[detail,setDetail]=useState<Detail|null>(null)
  const [question,setQuestion]=useState(''),[messages,setMessages]=useState<ChatMessage[]>([]),[chatBusy,setChatBusy]=useState(false),[searchResults,setSearchResults]=useState<Evidence[]>([])
+ const [serviceError,setServiceError]=useState(false)
  const [renameName,setRenameName]=useState(''),[mergeTarget,setMergeTarget]=useState(''),[contextLabel,setContextLabel]=useState(''),[drag,setDrag]=useState(false)
  const fileRef=useRef<HTMLInputElement>(null),evidenceRefs=useRef<Record<string,HTMLElement|null>>({}),evidenceSectionRef=useRef<HTMLDivElement>(null),questionRef=useRef<HTMLTextAreaElement>(null)
  const refresh=async(id:number)=>{const data=await request<Overview>(`/datasets/${id}/overview`);setOverview(data);setCurrent(id);setDatasets(await request<Dataset[]>('/datasets'));setTimeout(()=>document.getElementById('insights')?.scrollIntoView({behavior:'smooth'}),80)}
- useEffect(()=>{request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(e=>setError(e.message));else loadSample().catch(e=>setError(e.message))}).catch(e=>setError(e.message))},[])
+ useEffect(()=>{request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(()=>setServiceError(true));else loadSample().catch(()=>setServiceError(true))}).catch(()=>setServiceError(true))},[])
  useEffect(()=>{if(drawer?.type==='cluster'&&drawer.id&&current)request<Detail>(`/datasets/${current}/clusters/${drawer.id}`).then(setDetail).catch(e=>setError(e.message));else setDetail(null)},[drawer?.type,drawer?.id,current])
  useEffect(()=>{if(drawer?.feedback?.id)setTimeout(()=>evidenceRefs.current[drawer.feedback!.id]?.scrollIntoView({block:'center',behavior:'smooth'}),100)},[drawer,detail])
  useEffect(()=>{if(detail){setRenameName(detail.cluster.name);setMergeTarget('')}},[detail])
@@ -63,6 +64,7 @@ function App(){
      <div className="art" aria-hidden="true"><div className="disc"/><span>Signals</span></div>
     </div>
    </section>
+   {serviceError&&<div className="wrap service-error" role="alert"><span>分析服务暂不可用。页面已加载，但上传和 Agent 需要连接分析服务。</span><button type="button" onClick={()=>window.location.reload()}>重试 ↗</button></div>}
    <section className="wrap work" id="conversation">
     <div>
      <div className="section-title"><h2>开始分析</h2><small>01 / INPUT</small></div>

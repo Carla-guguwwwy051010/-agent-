@@ -36,9 +36,16 @@ npm run dev
 
 打开 [http://localhost:5173/](http://localhost:5173/)。首次使用会载入示例反馈；也可以上传自己的文件。API 健康检查：`http://localhost:8000/api/health`。数据库默认写在 `backend/folio.db`，该文件不入库。
 
+## Netlify 部署与打包预览
+
+仓库根目录的 `netlify.toml` 将构建目录设为 `frontend`，运行 `npm ci && npm run build`，只发布 `frontend/dist`。构建时将 JS/CSS 内联到 `dist/index.html`，因此这个构建文件可以直接打开并显示界面。`frontend/public/_redirects` 会复制到构建目录，供单页路由使用。当前前端是 **React + Vite**，并未使用 Vue Router。
+
+Netlify 只托管前端静态文件。完整的上传、数据分析和 Agent 对话还需要单独部署 FastAPI，并为其提供持久化 SQLite 存储。在 Netlify 的环境变量中设置 `VITE_API_BASE_URL=https://你的后端域名`（不要附加 `/api`）；在后端环境变量中设置 `FOLIO_CORS_ORIGINS=https://my-agent-demo-233.netlify.app`。修改构建环境变量后重新部署。若未连接后端，页面仍可显示，但会提示分析服务不可用。DeepSeek API Key 只能放在后端环境变量中。
+
+本地检查生产构建请运行 `cd frontend`、`npm run build`、`npm run preview`，再打开命令输出的 HTTP 地址。双击 `dist/index.html` 可以检查静态页面是否载入，但 `file://` 无法提供 API；GitHub 仓库中直接查看源码 `index.html` 也不是网站部署。
 ## 环境变量
 
-复制 [backend/.env.example](backend/.env.example) 为 `backend/.env`。两处 `.env` 均由 Git 忽略，切勿提交真实密钥。
+复制 [backend/.env.example](backend/.env.example) 为 `backend/.env`。前端公开的后端地址示例见 [frontend/.env.example](frontend/.env.example)；可在 Netlify 构建环境中设置。两处 `.env` 均由 Git 忽略，切勿提交真实密钥。
 
 | 变量 | 说明 |
 | --- | --- |
@@ -49,6 +56,7 @@ npm run dev
 | `DEEPSEEK_TIMEOUT` | 单次请求超时秒数 |
 | `DEEPSEEK_RETRIES` | 可重试错误的重试次数 |
 | `FOLIO_DB` | SQLite 文件路径 |
+| `FOLIO_CORS_ORIGINS` | 允许访问后端的额外前端域名，多个域名用英文逗号分隔 |
 
 服务端每 60 秒检查一次 DeepSeek 账号可用状态；恢复可用后刷新页面即可切换回真实模式。
 
