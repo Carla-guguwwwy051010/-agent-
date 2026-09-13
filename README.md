@@ -36,13 +36,21 @@ npm run dev
 
 打开 [http://localhost:5173/](http://localhost:5173/)。首次使用会载入示例反馈；也可以上传自己的文件。API 健康检查：`http://localhost:8000/api/health`。数据库默认写在 `backend/folio.db`，该文件不入库。
 
-## Netlify 部署与打包预览
+## 免费线上演示与本地真实模型
 
-仓库根目录的 `netlify.toml` 将构建目录设为 `frontend`，运行 `npm ci && npm run build`，只发布 `frontend/dist`。构建时将 JS/CSS 内联到 `dist/index.html`，因此这个构建文件可以直接打开并显示界面。`frontend/public/_redirects` 会复制到构建目录，供单页路由使用。当前前端是 **React + Vite**，并未使用 Vue Router。
+当前 [Netlify 页面](https://my-agent-demo-233.netlify.app/) 只托管 React 前端。仓库根目录的 `netlify.toml` 会从 `frontend` 构建并发布 `dist`；双击构建后的 `dist/index.html` 也能显示界面，但不能通过 `file://` 调用 API。GitHub 仓库中的 `frontend/index.html` 是源码入口，不是构建成品。
 
-Netlify 只托管前端静态文件。完整的上传、数据分析和 Agent 对话还需要单独部署 FastAPI，并为其提供持久化 SQLite 存储。在 Netlify 的环境变量中设置 `VITE_API_BASE_URL=https://你的后端域名`（不要附加 `/api`）；在后端环境变量中设置 `FOLIO_CORS_ORIGINS=https://my-agent-demo-233.netlify.app`。修改构建环境变量后重新部署。若未连接后端，页面仍可显示，但会提示分析服务不可用。DeepSeek API Key 只能放在后端环境变量中。
+[Render 免费后端部署入口](https://render.com/deploy?repo=https://github.com/Carla-guguwwwy051010/-agent-) 使用根目录的 `render.yaml` 创建 FastAPI Web Service。该配置固定 `MODEL_PROVIDER=mock`，**线上回答标为模拟回答，不调用 DeepSeek，也不消耗其 API 配额**。创建时确认计划是 `free`，不添加磁盘或付费资源。完成后：
 
-本地检查生产构建请运行 `cd frontend`、`npm run build`、`npm run preview`，再打开命令输出的 HTTP 地址。双击 `dist/index.html` 可以检查静态页面是否载入，但 `file://` 无法提供 API；GitHub 仓库中直接查看源码 `index.html` 也不是网站部署。
+1. 复制 Render 提供的公网服务地址（例如 `https://你的服务.onrender.com`），访问其 `/api/health`，确认返回 JSON 中的 `ok: true`。
+2. 在 Netlify 的站点环境变量中设置 `VITE_API_BASE_URL` 为该地址，**不要附加 `/api` 或末尾斜杠**，然后重新部署站点。
+3. 在 Render 的环境变量页面复制自动生成的 `FOLIO_ACCESS_TOKEN`；打开 Netlify 页面时输入它。不要把口令写进仓库、Netlify 公开构建变量或简历。
+4. 用虚构反馈测试上传、主题和模拟 Agent。服务重启、休眠恢复或重新部署可能清空 SQLite；上传数据不适合长期保存。该版本使用共享口令，没有每位访问者独立的数据空间，勿上传真实或敏感反馈。
+
+本地仍按上面的启动步骤运行 FastAPI。在 `backend/.env` 中设置 `MODEL_PROVIDER=auto` 和**新生成的** `DEEPSEEK_API_KEY`，即可继续做真实 DeepSeek 分析。此前在聊天中明文分享过的密钥建议轮换。简历中应区分“本地真实 DeepSeek 验证”和“线上免费模拟演示”。
+
+本地检查生产构建请运行 `cd frontend`、`npm run build`、`npm run preview`，再打开命令输出的 HTTP 地址。
+
 ## 环境变量
 
 复制 [backend/.env.example](backend/.env.example) 为 `backend/.env`。前端公开的后端地址示例见 [frontend/.env.example](frontend/.env.example)；可在 Netlify 构建环境中设置。两处 `.env` 均由 Git 忽略，切勿提交真实密钥。
@@ -57,6 +65,7 @@ Netlify 只托管前端静态文件。完整的上传、数据分析和 Agent �
 | `DEEPSEEK_RETRIES` | 可重试错误的重试次数 |
 | `FOLIO_DB` | SQLite 文件路径 |
 | `FOLIO_CORS_ORIGINS` | 允许访问后端的额外前端域名，多个域名用英文逗号分隔 |
+| `FOLIO_ACCESS_TOKEN` | 公网 API 共享访问口令；本地留空时不要求口令 |
 
 服务端每 60 秒检查一次 DeepSeek 账号可用状态；恢复可用后刷新页面即可切换回真实模式。
 
@@ -64,7 +73,7 @@ Netlify 只托管前端静态文件。完整的上传、数据分析和 Agent �
 
 - 负向占比 = 负向反馈条数 ÷ 有效反馈总数；提及频次不等于业务优先级。
 - 没有有效日期时不提供增长趋势；少于两个有效版本时不提供版本比较。根因和业务影响只能作为待验证假设。
-- V1 为单机 SQLite，无登录、租户隔离和并发任务队列；单次导入最多 10,000 行、20 MB。
+- V1 为单机 SQLite，只有共享访问口令，无个人账户、租户隔离和并发任务队列；单次导入最多 10,000 行、20 MB。
 - 模型分析可能需要人工复核。DeepSeek 部分批次失败会回退模拟分类并报告错误；尚无失败条目单独重跑界面。
 - 当前支持主题级人工整理，尚无逐条反馈人工修正界面或完整趋势图。外部字体依赖网络。
 - 不记录 API Key；模型调用日志只保存次数、耗时和 token 用量等元数据。

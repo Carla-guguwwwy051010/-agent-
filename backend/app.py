@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from openpyxl import load_workbook
@@ -22,7 +23,15 @@ import xlrd
 
 load_dotenv(Path(__file__).with_name('.env'))
 DB = Path(os.getenv('FOLIO_DB', str(Path(__file__).with_name('folio.db'))))
-app = FastAPI(title='Folio API')
+def require_access(request: Request, authorization: str | None = Header(default=None)):
+    expected = os.getenv('FOLIO_ACCESS_TOKEN', '').strip()
+    if not expected or request.url.path == '/api/health':
+        return
+    scheme, _, token = (authorization or '').partition(' ')
+    if scheme.lower() != 'bearer' or not secrets.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail='访问口令无效')
+
+app = FastAPI(title='Folio API', dependencies=[Depends(require_access)])
 cors_origins = ['http://localhost:5173', 'http://127.0.0.1:5173'] + [origin.strip().rstrip('/') for origin in os.getenv('FOLIO_CORS_ORIGINS', '').split(',') if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=['*'], allow_headers=['*'])
 

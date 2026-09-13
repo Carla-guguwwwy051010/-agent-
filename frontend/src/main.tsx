@@ -12,7 +12,8 @@ type Detail={cluster:Issue;count:number;share:number;denominator:number;evidence
 type ChatMessage={role:'user'|'agent';text:string;mode?:string}
 const labels:Record<string,string>={text:'反馈内容',date:'日期',version:'版本',platform:'平台',source:'来源',rating:'评分'}
 const API=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')+'/api'
-async function request<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(API+url,options);if(!(r.headers.get('content-type')||'').includes('application/json'))throw new Error('分析服务未连接');const data=await r.json().catch(()=>({detail:'服务器返回了无效响应'}));if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败');return data as T}
+function accessToken(){try{return sessionStorage.getItem('folio_access_token')||''}catch{return ''}}
+async function request<T>(url:string,options?:RequestInit):Promise<T>{const headers=new Headers(options?.headers);const token=accessToken();if(token)headers.set('Authorization',`Bearer ${token}`);const r=await fetch(API+url,{...options,headers});if(!(r.headers.get('content-type')||'').includes('application/json'))throw new Error('分析服务未连接');const data=await r.json().catch(()=>({detail:'服务器返回了无效响应'}));if(r.status===401)throw new Error('访问口令无效');if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败');return data as T}
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
 
 function App(){
@@ -20,11 +21,11 @@ function App(){
  const [preview,setPreview]=useState<Preview|null>(null),[mapping,setMapping]=useState<Record<string,string|null>>({}),[paste,setPaste]=useState(''),[pasteOpen,setPasteOpen]=useState(false)
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[drawer,setDrawer]=useState<{type:'cluster'|'metric'|'evidence';id?:number;metric?:string;feedback?:Evidence}|null>(null),[detail,setDetail]=useState<Detail|null>(null)
  const [question,setQuestion]=useState(''),[messages,setMessages]=useState<ChatMessage[]>([]),[chatBusy,setChatBusy]=useState(false),[searchResults,setSearchResults]=useState<Evidence[]>([])
- const [serviceError,setServiceError]=useState(false)
+ const [serviceError,setServiceError]=useState(false),[needsAuth,setNeedsAuth]=useState(false),[accessInput,setAccessInput]=useState('')
  const [renameName,setRenameName]=useState(''),[mergeTarget,setMergeTarget]=useState(''),[contextLabel,setContextLabel]=useState(''),[drag,setDrag]=useState(false)
  const fileRef=useRef<HTMLInputElement>(null),evidenceRefs=useRef<Record<string,HTMLElement|null>>({}),evidenceSectionRef=useRef<HTMLDivElement>(null),questionRef=useRef<HTMLTextAreaElement>(null)
  const refresh=async(id:number)=>{const data=await request<Overview>(`/datasets/${id}/overview`);setOverview(data);setCurrent(id);setDatasets(await request<Dataset[]>('/datasets'));setTimeout(()=>document.getElementById('insights')?.scrollIntoView({behavior:'smooth'}),80)}
- useEffect(()=>{request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(()=>setServiceError(true));else loadSample().catch(()=>setServiceError(true))}).catch(()=>setServiceError(true))},[])
+ useEffect(()=>{const fail=(e:Error)=>{if(e.message==='访问口令无效')setNeedsAuth(true);else setServiceError(true)};request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(fail);else loadSample().catch(fail)}).catch(fail)},[])
  useEffect(()=>{if(drawer?.type==='cluster'&&drawer.id&&current)request<Detail>(`/datasets/${current}/clusters/${drawer.id}`).then(setDetail).catch(e=>setError(e.message));else setDetail(null)},[drawer?.type,drawer?.id,current])
  useEffect(()=>{if(drawer?.feedback?.id)setTimeout(()=>evidenceRefs.current[drawer.feedback!.id]?.scrollIntoView({block:'center',behavior:'smooth'}),100)},[drawer,detail])
  useEffect(()=>{if(detail){setRenameName(detail.cluster.name);setMergeTarget('')}},[detail])
@@ -64,6 +65,7 @@ function App(){
      <div className="art" aria-hidden="true"><div className="disc"/><span>Signals</span></div>
     </div>
    </section>
+   {needsAuth&&<div className="wrap service-error" role="alert"><span>请输入工作台访问口令，连接线上分析服务。</span><form onSubmit={e=>{e.preventDefault();if(!accessInput.trim())return;sessionStorage.setItem('folio_access_token',accessInput.trim());window.location.reload()}}><input type="password" autoComplete="off" value={accessInput} onChange={e=>setAccessInput(e.target.value)} aria-label="工作台访问口令" placeholder="访问口令"/><button type="submit" disabled={!accessInput.trim()}>连接 ↗</button></form></div>}
    {serviceError&&<div className="wrap service-error" role="alert"><span>分析服务暂不可用。页面已加载，但上传和 Agent 需要连接分析服务。</span><button type="button" onClick={()=>window.location.reload()}>重试 ↗</button></div>}
    <section className="wrap work" id="conversation">
     <div>

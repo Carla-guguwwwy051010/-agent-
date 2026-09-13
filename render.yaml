@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: folio-agent-demo-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    autoDeployTrigger: off
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: FOLIO_DB
+        value: /tmp/folio.db
+      - key: FOLIO_CORS_ORIGINS
+        value: https://my-agent-demo-233.netlify.app
+      - key: FOLIO_ACCESS_TOKEN
+        generateValue: true
+      - key: MODEL_PROVIDER
+        value: mock

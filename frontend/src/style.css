@@ -24,3 +24,4 @@ dialog{width:min(650px,calc(100% - 28px));max-height:calc(100vh - 30px);overflow
 @keyframes folio-spin{to{transform:rotate(360deg)}}
 @media(max-width:680px){.dataset-name{max-width:180px}}
 .service-error{margin-top:28px;padding:14px 18px;background:#f0e7db;border:1px solid #ba9a75;color:#302c27;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:12px;line-height:1.6}.service-error button{border:0;border-bottom:1px solid currentColor;background:none;padding:2px 0;color:inherit;font-weight:700;white-space:nowrap}@media(max-width:680px){.service-error{align-items:flex-start;flex-direction:column}}
+.service-error form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.service-error input{min-width:180px;padding:8px 10px;border:1px solid #ba9a75;background:#fffdf9;font:inherit}.service-error input:focus-visible,.service-error button:focus-visible{outline:2px solid var(--olive);outline-offset:2px}

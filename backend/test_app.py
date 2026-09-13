@@ -85,3 +85,17 @@ def test_reference_sample_counts(client):
     assert len(overview['issues']) == 5
     assert overview['issues'][0]['count'] == 6
     assert round(overview['negative_share']) == 56
+
+def test_access_token_protects_api(client, monkeypatch):
+    monkeypatch.setenv('FOLIO_ACCESS_TOKEN', 'test-access-token')
+    assert client.get('/api/health').status_code == 200
+    assert client.get('/api/datasets').status_code == 401
+    assert client.get('/api/datasets', headers={'Authorization': 'Bearer wrong'}).status_code == 401
+    assert client.get('/api/datasets', headers={'Authorization': 'Bearer test-access-token'}).status_code == 200
+    preflight = client.options('/api/datasets', headers={
+        'Origin': 'http://localhost:5173',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization',
+    })
+    assert preflight.status_code == 200
+    assert preflight.headers['access-control-allow-origin'] == 'http://localhost:5173'
