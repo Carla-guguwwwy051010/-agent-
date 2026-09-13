@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react'
 import {createRoot} from 'react-dom/client'
 import {LoaderCircle} from 'lucide-react'
 import './style.css'
+import {getSessionId,loadMockHistory,saveMockHistory,mockReply} from './mockChat'
 
 type Preview={name:string;headers:string[];rows:string[][];preview:string[][];estimated:number;suggested_mapping:Record<string,string|null>}
 type Issue={id:number;name:string;description:string;status:string;count:number}
@@ -15,17 +16,20 @@ const API=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')+'/api'
 function accessToken(){try{return sessionStorage.getItem('folio_access_token')||''}catch{return ''}}
 async function request<T>(url:string,options?:RequestInit):Promise<T>{const headers=new Headers(options?.headers);const token=accessToken();if(token)headers.set('Authorization',`Bearer ${token}`);const r=await fetch(API+url,{...options,headers});if(!(r.headers.get('content-type')||'').includes('application/json'))throw new Error('分析服务未连接');const data=await r.json().catch(()=>({detail:'服务器返回了无效响应'}));if(r.status===401)throw new Error('访问口令无效');if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败');return data as T}
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-
+const ONLINE_MOCK=!import.meta.env.DEV
 function App(){
  const [datasets,setDatasets]=useState<Dataset[]>([]),[current,setCurrent]=useState<number|null>(null),[overview,setOverview]=useState<Overview|null>(null)
  const [preview,setPreview]=useState<Preview|null>(null),[mapping,setMapping]=useState<Record<string,string|null>>({}),[paste,setPaste]=useState(''),[pasteOpen,setPasteOpen]=useState(false)
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[drawer,setDrawer]=useState<{type:'cluster'|'metric'|'evidence';id?:number;metric?:string;feedback?:Evidence}|null>(null),[detail,setDetail]=useState<Detail|null>(null)
- const [question,setQuestion]=useState(''),[messages,setMessages]=useState<ChatMessage[]>([]),[chatBusy,setChatBusy]=useState(false),[searchResults,setSearchResults]=useState<Evidence[]>([])
+ const [sessionId]=useState(getSessionId)
+ const [question,setQuestion]=useState(''),[messages,setMessages]=useState<ChatMessage[]>(()=>ONLINE_MOCK?loadMockHistory(sessionId):[]),[chatBusy,setChatBusy]=useState(false),[searchResults,setSearchResults]=useState<Evidence[]>([])
+ const [chatError,setChatError]=useState('')
  const [serviceError,setServiceError]=useState(false),[needsAuth,setNeedsAuth]=useState(false),[accessInput,setAccessInput]=useState('')
  const [renameName,setRenameName]=useState(''),[mergeTarget,setMergeTarget]=useState(''),[contextLabel,setContextLabel]=useState(''),[drag,setDrag]=useState(false)
  const fileRef=useRef<HTMLInputElement>(null),evidenceRefs=useRef<Record<string,HTMLElement|null>>({}),evidenceSectionRef=useRef<HTMLDivElement>(null),questionRef=useRef<HTMLTextAreaElement>(null)
  const refresh=async(id:number)=>{const data=await request<Overview>(`/datasets/${id}/overview`);setOverview(data);setCurrent(id);setDatasets(await request<Dataset[]>('/datasets'));setTimeout(()=>document.getElementById('insights')?.scrollIntoView({behavior:'smooth'}),80)}
- useEffect(()=>{const fail=(e:Error)=>{if(e.message==='访问口令无效')setNeedsAuth(true);else setServiceError(true)};request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(fail);else loadSample().catch(fail)}).catch(fail)},[])
+ useEffect(()=>{if(ONLINE_MOCK)return;const fail=(e:Error)=>{if(e.message==='访问口令无效')setNeedsAuth(true);else setServiceError(true)};request<Dataset[]>('/datasets').then(ds=>{setDatasets(ds);if(ds[0])refresh(ds[0].id).catch(fail);else loadSample().catch(fail)}).catch(fail)},[])
+ useEffect(()=>{if(ONLINE_MOCK)saveMockHistory(sessionId,messages)},[messages,sessionId])
  useEffect(()=>{if(drawer?.type==='cluster'&&drawer.id&&current)request<Detail>(`/datasets/${current}/clusters/${drawer.id}`).then(setDetail).catch(e=>setError(e.message));else setDetail(null)},[drawer?.type,drawer?.id,current])
  useEffect(()=>{if(drawer?.feedback?.id)setTimeout(()=>evidenceRefs.current[drawer.feedback!.id]?.scrollIntoView({block:'center',behavior:'smooth'}),100)},[drawer,detail])
  useEffect(()=>{if(detail){setRenameName(detail.cluster.name);setMergeTarget('')}},[detail])
@@ -36,7 +40,8 @@ function App(){
  const usePaste=()=>{const rows=paste.split(/\r?\n/).map(x=>[x]).filter(x=>x[0].trim());if(!rows.length){setError('请先粘贴至少一条反馈');return}const p={name:'粘贴文本',headers:['反馈内容'],rows,preview:rows.slice(0,3),estimated:rows.length,suggested_mapping:{text:'反馈内容'}};setMapping({text:'反馈内容'});setPasteOpen(false);setPreview(p)}
  const openEvidence=async(fid:string)=>{if(!current)return;try{const r=await request<{evidence:Evidence|null}>(`/datasets/${current}/feedback/${fid}`);if(!r.evidence){setError('当前数据集找不到这条反馈');return}setDrawer({type:'evidence',feedback:r.evidence})}catch(e){setError((e as Error).message)}}
  const renderText=(text:string)=>text.split(/(F-\d+-\d+-[a-f0-9]{8})/g).map((part,i)=>/^F-\d+-\d+-[a-f0-9]{8}$/.test(part)?<button className="citation" key={i} onClick={()=>openEvidence(part)}>{part}</button>:<React.Fragment key={i}>{part}</React.Fragment>)
- const ask=async(q=question)=>{if(!q.trim()||!current||chatBusy)return;setMessages(m=>[...m,{role:'user',text:q}]);setQuestion('');setContextLabel('');setChatBusy(true);try{const r=await request<{mode:string;answer:string}>(`/datasets/${current}/chat`,json({question:q}));setMessages(m=>[...m,{role:'agent',text:r.answer,mode:r.mode}])}catch(e){setMessages(m=>[...m,{role:'agent',text:(e as Error).message+'。请重试。'}])}finally{setChatBusy(false)}}
+ const ask=async(q=question)=>{if(!q.trim()||chatBusy||(!ONLINE_MOCK&&!current))return;setChatError('');setChatBusy(true);const message=q.trim();try{if(ONLINE_MOCK){setMessages(m=>[...m,{role:'user',text:message}]);setQuestion('');setContextLabel('');await new Promise(resolve=>setTimeout(resolve,450));setMessages(m=>[...m,{role:'agent',text:mockReply(message),mode:'mock'}])}else{setMessages(m=>[...m,{role:'user',text:message}]);const r=await request<{mode:string;answer:string}>(`/datasets/${current}/chat`,json({question:message}));setMessages(m=>[...m,{role:'agent',text:r.answer,mode:r.mode}]);setQuestion('');setContextLabel('')}}catch(e){setChatError((e as Error).message)}finally{setChatBusy(false)}}
+ const clearChat=()=>{if(!ONLINE_MOCK||chatBusy)return;setMessages([]);setChatError('')}
  const review=async(operation:string,id:number,name?:string,target_id?:number)=>{if(!current)return;setBusy('review');try{const result=await request<Overview>('/datasets/'+current+'/clusters/'+id+'/review',json({operation,name,target_id}));setOverview(result);setNotice('主题已更新，原始反馈保持不变。');if(operation==='rename'){const updated=await request<Detail>('/datasets/'+current+'/clusters/'+id);setDetail(updated);setRenameName(updated.cluster.name)}else setDrawer(null)}catch(e){setError((e as Error).message)}finally{setBusy('')}}
  const rename=()=>{if(drawer?.id&&renameName.trim())review('rename',drawer.id,renameName.trim())}
  const merge=()=>{if(drawer?.id&&mergeTarget)review('merge',drawer.id,undefined,Number(mergeTarget))}
@@ -54,7 +59,7 @@ function App(){
  return <div className="site">
   <header className="wrap topbar">
    <a className="brand" href="#top"><i aria-hidden="true"/>folio.</a>
-   <nav><a href="#conversation">对话</a><a href="#insights">洞察</a></nav>
+   <nav><a href="#conversation">对话</a>{!ONLINE_MOCK&&<a href="#insights">洞察</a>}</nav>
    <span className="ready">工作台已就绪</span>
   </header>
   <main id="top">
@@ -66,10 +71,11 @@ function App(){
     </div>
    </section>
    {needsAuth&&<div className="wrap service-error" role="alert"><span>请输入工作台访问口令，连接线上分析服务。</span><form onSubmit={e=>{e.preventDefault();if(!accessInput.trim())return;sessionStorage.setItem('folio_access_token',accessInput.trim());window.location.reload()}}><input type="password" autoComplete="off" value={accessInput} onChange={e=>setAccessInput(e.target.value)} aria-label="工作台访问口令" placeholder="访问口令"/><button type="submit" disabled={!accessInput.trim()}>连接 ↗</button></form></div>}
-   {serviceError&&<div className="wrap service-error" role="alert"><span>分析服务暂不可用。页面已加载，但上传和 Agent 需要连接分析服务。</span><button type="button" onClick={()=>window.location.reload()}>重试 ↗</button></div>}
+   {serviceError&&<div className="wrap service-error" role="alert"><span>分析服务暂不可用。页面已加载；上传和数据洞察需要分析服务，右侧模拟对话仍可使用。</span><button type="button" onClick={()=>window.location.reload()}>重试 ↗</button></div>}
    <section className="wrap work" id="conversation">
     <div>
      <div className="section-title"><h2>开始分析</h2><small>01 / INPUT</small></div>
+     {ONLINE_MOCK?<div className="demo-entry"><div className="upload-symbol">↗</div><div><strong>体验模拟 Agent</strong><p>直接在右侧对话。此演示不上传文件、不生成真实数据结论；本地版可连接 DeepSeek 分析反馈。</p><button className="outline" type="button" onClick={()=>questionRef.current?.focus()}>开始提问 ↗</button></div></div>:<>
      <div className={'drop'+(drag?' drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);const file=e.dataTransfer.files?.[0];if(file)upload(file)}}>
       <div className="upload-symbol">↗</div>
       <div className="upload-copy"><strong>放入你的用户反馈</strong><small>CSV、Excel 或 TXT · 拖放文件至此</small></div>
@@ -79,22 +85,25 @@ function App(){
      <div className={'file-state'+(busy?' show':'')}><span>{busy==='reading'?'正在读取文件…':busy==='analyzing'?'正在分析反馈…':busy==='sample'?'正在载入示例数据…':busy==='review'?'正在更新主题…':''}</span>{busy&&<LoaderCircle className="spin" size={15}/>}</div>
      <div className="action-row"><span>也可以直接粘贴一段反馈文本</span><button className="text-link" type="button" onClick={()=>setPasteOpen(true)} disabled={!!busy}>粘贴文本 ↗</button></div>
      <div className="action-row"><span>想先看看它如何工作？</span><button className="text-link" type="button" onClick={loadSample} disabled={!!busy}>载入示例数据 ↗</button></div>
+     </>}
     </div>
     <div className="chat">
-     <div className="chat-head"><span>◉ &nbsp; FOLIO AGENT</span><span>● 在线 · {overview?.model_status==='insufficient_balance'?'余额不足 · 模拟回答':overview?.provider==='deepseek'?'DeepSeek 回答':'模拟回答'}</span></div>
+     <div className="chat-head"><span>◉ &nbsp; FOLIO AGENT</span><div className="chat-controls"><span>● {ONLINE_MOCK?'浏览器内 · 模拟对话':overview?.model_status==='insufficient_balance'?'余额不足 · 模拟回答':overview?.provider==='deepseek'?'DeepSeek 回答':'模拟回答'}</span>{ONLINE_MOCK&&<button type="button" onClick={clearChat} disabled={chatBusy||messages.length===0}>清空会话</button>}</div></div>
      <div className="messages" aria-live="polite">
-      {messages.length===0&&<div className="message agent"><span className="who">FOLIO</span>你好。上传反馈，或先载入示例数据。你也可以直接问我想了解什么。</div>}
+      {messages.length===0&&<div className="message agent"><span className="who">FOLIO</span>{ONLINE_MOCK?'你好。这里是浏览器内的模拟对话，可以直接提问；回答不会读取上传反馈或生成真实洞察。':'你好。上传反馈，或先载入示例数据。你也可以直接问我想了解什么。'}</div>}
       {messages.map((m,i)=><div key={i} className={'message '+m.role}>{m.role==='agent'&&<span className="who">{m.mode==='mock'?'FOLIO · 模拟回答':'FOLIO'}</span>}{renderText(m.text)}</div>)}
-      {chatBusy&&<div className="message agent"><span className="who">FOLIO</span>正在查询当前数据集…</div>}
+      {chatBusy&&<div className="message agent"><span className="who">FOLIO</span>{ONLINE_MOCK?'正在生成模拟回答…':'正在查询当前数据集…'}</div>}
+      {chatError&&<div className="chat-error" role="alert">{chatError}<button type="button" onClick={()=>setChatError('')}>关闭</button></div>}
      </div>
+     {ONLINE_MOCK&&messages.length===0&&<div className="demo-prompts">{['如何整理反馈主题？','怎样判断问题优先级？','如何核查增长趋势？'].map(prompt=><button key={prompt} type="button" onClick={()=>ask(prompt)} disabled={chatBusy}>{prompt}</button>)}</div>}
      {contextLabel&&<div className="context show"><span>{contextLabel}</span><button type="button" onClick={()=>setContextLabel('')} aria-label="移除上下文">×</button></div>}
      <form className="composer" onSubmit={e=>{e.preventDefault();ask()}}>
-      <textarea ref={questionRef} rows={1} value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask()}}} placeholder="向 Folio 提问…" aria-label="向 Agent 提问" disabled={!current||chatBusy}/>
-      <button className="send" type="submit" disabled={!current||!question.trim()||chatBusy} aria-label="发送">↗</button>
+      <textarea ref={questionRef} rows={1} value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask()}}} placeholder="向 Folio 提问…" aria-label="向 Agent 提问" disabled={(!ONLINE_MOCK&&!current)||chatBusy}/>
+      <button className="send" type="submit" disabled={(!ONLINE_MOCK&&!current)||!question.trim()||chatBusy} aria-label="发送">↗</button>
      </form>
     </div>
    </section>
-   <section className="wrap insights" id="insights">
+   {!ONLINE_MOCK&&<section className="wrap insights" id="insights">
     <div className="insight-head">
      <div><div className="eyebrow">THE SIGNALS / 02</div><h2>数据中的声音</h2></div>
      <div className="dataset">当前数据集<br/><div className="dataset-name"><strong>{overview?.dataset.name||'尚未载入'}</strong>{datasets.length>0&&<select aria-label="切换数据集" value={current??''} onChange={e=>refresh(Number(e.target.value)).catch(err=>setError(err.message))}>{datasets.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select>}</div><div className="data-badges"><span className={'badge'+(overview?.dataset.source==='upload'?' real':'')}>{overview?.dataset.source==='sample'?'示例数据':overview?'上传数据':'待载入'}</span><span className="badge">初步归类</span></div></div>
@@ -106,7 +115,7 @@ function App(){
      <button className="stat" type="button" onClick={()=>metricEvidence('priority')} disabled={!overview}><span className="stat-label">提及最多<span>↗</span></span><span className="value">{overview?.issues[0]?.count||0}</span><span className="stat-note">条相关反馈</span></button>
     </div>
     <div className="issues-layout"><div><h3>Top Issues</h3><p>点击数据，查看分析或询问 Agent ↗</p></div><div>{overview?.issues.map((issue,i)=><button className="issue" type="button" key={issue.id} onClick={()=>setDrawer({type:'cluster',id:issue.id})}><span className="issue-no">{String(i+1).padStart(2,'0')}</span><span className="issue-name">{issue.name}<small>{issue.description}</small></span><span className="issue-count">{issue.count}<small> 条</small></span><span className="arrow">↗</span></button>)}</div></div>
-   </section>
+   </section>}
   </main>
   <footer className="wrap"><strong>folio.</strong><span>Every voice has a signal. © 2026 Folio</span></footer>
   {pasteOpen&&<dialog ref={node=>{if(node&&!node.open)node.showModal()}} onClose={()=>setPasteOpen(false)}><div className="dialog-head"><h2>粘贴反馈</h2><button className="close" type="button" onClick={()=>setPasteOpen(false)} aria-label="关闭">×</button></div><textarea className="dialog-textarea" value={paste} onChange={e=>setPaste(e.target.value)} placeholder="每行一条反馈，或粘贴带字段名的 CSV 内容。"/><div className="dialog-foot"><small>支持逐行文本</small><button className="solid" type="button" onClick={usePaste}>继续 ↗</button></div></dialog>}
