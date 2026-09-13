@@ -1,0 +1,18 @@
+# Dependencies and build products
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Local state and secrets
+.env
+**/.env
+.env.local
+**/.env.local
+backend/*.db
+*.log
