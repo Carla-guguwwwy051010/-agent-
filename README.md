@@ -10,7 +10,7 @@ Folio 面向产品经理与用户运营，将上传的用户反馈整理为可�
 - 首页统计、Top Issues、原文证据抽屉、反馈 ID 定位，以及主题改名、合并和移出列表。
 - FastAPI 数据工具：`get_top_issues`、`get_cluster_detail`、`get_issue_trend`、`compare_versions`、`search_feedback`、`get_evidence`。查询均限定当前数据集。
 - 模拟模型与 DeepSeek 模型通过同一服务接口使用。DeepSeek 密钥只在服务端读取；余额不足或密钥无效时回退模拟模式。
-- 线上浏览器内模拟聊天支持快捷提问、历史保存和清空会话；不执行反馈分析。
+- 线上浏览器内虚拟数据工作台可体验字段确认、概览、Top Issues、原文证据、主题整理和模拟 Agent；演示数据与真实分析明确区分。
 - [示例反馈](backend/sample_feedback.csv) 含 16 条虚构记录。示例主题采用固定演示归类，**不代表用户上传数据的正式模型分析**。
 
 ## 技术栈
@@ -37,13 +37,15 @@ npm run dev
 
 打开 [http://localhost:5173/](http://localhost:5173/)。首次使用会载入示例反馈；也可以上传自己的文件。API 健康检查：`http://localhost:8000/api/health`。数据库默认写在 `backend/folio.db`，该文件不入库。
 
-## 线上纯前端模拟对话与本地真实分析
+## 线上完整工作台演示与本地真实分析
 
-[Netlify 页面](https://my-agent-demo-233.netlify.app/) 在生产构建中提供**浏览器内模拟 Agent**，无需 Worker、D1 或其他后端。用户可直接输入问题或点击快捷提问，获得针对反馈分析方法的模拟回复；历史消息保存在当前浏览器的 `localStorage`，刷新后仍在，“清空会话”会清除此浏览器的演示记录。模拟回复不读取上传文件，也不生成数量、趋势、根因或证据 ID 等真实数据结论。线上演示隐藏上传与洞察模块，以免将不可用功能误呈现为已上线。
+[Netlify 页面](https://my-agent-demo-233.netlify.app/) 使用与本地相同的上传入口、字段确认、概览、Top Issues、分析抽屉、原文证据和 Agent 对话布局。生产构建通过浏览器内的演示数据层运行，无需 Worker、D1 或 FastAPI。首次访问自动载入 16 条虚构反馈；选择 CSV、TSV、Excel 或 TXT 文件时，**不会读取所选文件内容**，而是进入字段确认并载入同一份内置虚构样例。页面和弹窗均标注这一点，所有演示数量都从虚构反馈逐条计算。粘贴文本则只在当前浏览器内按文字规则归类，不调用模型。
 
-本地 `npm run dev` 保留 FastAPI 数据集 Agent 和 DeepSeek 的真实分析流程，需要先启动后端。若以后要在线上开放上传、字段解析、统计和有证据的 Agent 回答，仍需部署完整后端并配置 `VITE_API_BASE_URL`。仓库的 [worker/worker.js](worker/worker.js) 是此前 D1 聊天原型，当前 Netlify 前端**不调用它**。
+可点击指标、主题和 Agent 回答中的反馈 ID 核对演示原文，也可体验主题改名、合并、移出列表及缺失日期／版本时的拒答。演示数据和聊天记录保存在当前浏览器 `localStorage`；清空会话只删除聊天记录。演示 Agent 的回答基于当前浏览器数据集计算，并明确标为**模拟回答**，不代表真实模型分析。请勿将演示数据结果写成真实用户研究结论。
 
-本地检查生产构建：`cd frontend`，执行 `npm run build` 和 `npm run preview`。由于是单文件构建，双击 `dist/index.html` 也应能显示模拟对话；GitHub 仓库中的 `frontend/index.html` 是源码入口，不是构建成品。
+本地 `npm run dev` 保留 FastAPI 数据集 Agent 和 DeepSeek 的真实分析流程，需要先启动后端。若以后要在线上分析用户文件，仍需部署完整后端并配置 `VITE_API_BASE_URL`。仓库的 [worker/worker.js](worker/worker.js) 是此前 D1 聊天原型，当前 Netlify 前端不调用它。
+
+本地检查生产构建：`cd frontend`，执行 `npm run build` 和 `npm run preview`。由于是单文件构建，双击 `dist/index.html` 也应能显示演示界面；GitHub 仓库中的 `frontend/index.html` 是源码入口，不是构建成品。
 
 ## 环境变量
 
@@ -81,6 +83,6 @@ cd ../frontend
 npm run build
 ```
 
-此前 D1 Worker 原型测试：`node --test worker/worker.test.mjs`；当前线上演示不使用 Worker。
+演示数据测试：`node --experimental-strip-types --test frontend/src/demoApi.test.mjs`。此前 D1 Worker 原型测试：`node --test worker/worker.test.mjs`；当前线上演示不使用 Worker。
 
 下一阶段建立带人工标注的评估集，分别测量字段映射与去重准确率、主题成员一致性、情绪分类一致率、Agent 引用 ID 的精确率、缺失日期／版本时的拒答率，以及 DeepSeek 与模拟模式的延迟和 token 用量。每次模型或提示词变更前后运行同一评估集，记录回归；本 baseline 不包含针对评估结果的 Prompt 优化。
